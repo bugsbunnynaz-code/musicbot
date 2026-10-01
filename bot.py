@@ -1,4 +1,5 @@
-import os
+
+ import os
 import requests
 import telebot
 from flask import Flask, jsonify, request
@@ -19,7 +20,6 @@ def api_search():
     return jsonify([])
 
   try:
-    # Імітуємо звичайний браузер, щоб сайт не блокував запити з Render
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -27,7 +27,6 @@ def api_search():
         'Referer': 'https://z3.fm/',
     }
 
-    # Робимо запит до пошуку z3.fm
     search_url = f'https://z3.fm/mp3/search?keywords={requests.utils.quote(query)}'
     res = requests.get(search_url, headers=headers, timeout=6)
 
@@ -47,7 +46,6 @@ def api_search():
 
         def handle_starttag(self, tag, attrs):
           attrs_dict = dict(attrs)
-          # Шукаємо блоки пісень на сторінці z3.fm
           if tag == 'div' and 'song' in attrs_dict.get('class', ''):
             self.in_song = True
             self.current_title = ""
@@ -80,7 +78,7 @@ def api_search():
                 self.current_url = f'https://z3.fm{self.current_url}'
               self.tracks.append({
                   'title': self.current_title,
-                  'author': self.current_artist || 'Виконавець',
+                  'author': self.current_artist or 'Виконавець',  # Виправлено тут
                   'url': self.current_url,
               })
             self.in_song = False

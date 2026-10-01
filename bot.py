@@ -19,67 +19,41 @@ def api_search():
     return jsonify([])
 
   try:
+    # Використовуємо офіційне відкрите API Deezer для пошуку музики
     res = requests.get(
-        f'https://vid.puffyan.us/api/v1/search?q={requests.utils.quote(query)}&type=video',
+        f'https://api.deezer.com/search?q={requests.utils.quote(query)}',
         timeout=5,
     )
     if res.status_code != 200:
       return jsonify([])
 
-    items = res.json()
+    data = res.json().get('data', [])
     tracks = []
-    for item in items[:15]:
-      vid_id = item.get('videoId')
+    for item in data[:15]:
       title = item.get('title')
-      author = item.get('author')
-      if vid_id and title:
+      artist = item.get('artist', {}).get('name', 'Невідомий виконавець')
+      preview_url = item.get('preview')  # Пряме посилання на трек
+
+      if title and preview_url:
         tracks.append({
             'title': title,
-            'author': author or 'YouTube',
-            'url': f'https://www.youtube.com/watch?v={vid_id}',
+            'author': artist,
+            'url': preview_url,
         })
     return jsonify(tracks)
   except Exception as e:
-    print(f'Ошибка поиска: {e}')
+    print(f'Помилка пошуку Deezer: {e}')
     return jsonify([])
 
 
 @app.route('/play', methods=['GET'])
 def api_play():
-  video_url = request.args.get('url', '')
-  if not video_url:
+  # Оскільки Deezer одразу віддає готове посилання на аудіо при пошуку, просто повертаємо його
+  audio_url = request.args.get('url', '')
+  if not audio_url:
     return jsonify({'error': 'No URL provided'}), 400
 
-  try:
-    if 'v=' in video_url:
-      vid_id = video_url.split('v=')[1].split('&')[0]
-    else:
-      vid_id = video_url.split('/')[-1]
-
-    res = requests.get(
-        f'https://invidious.perennialte.ch/api/v1/videos/{vid_id}', timeout=5
-    )
-    if res.status_code != 200:
-      res = requests.get(
-          f'https://vid.puffyan.us/api/v1/videos/{vid_id}', timeout=5
-      )
-
-    data = res.json()
-    adaptive_formats = data.get('adaptiveFormats', [])
-
-    audio_url = None
-    for fmt in adaptive_formats:
-      if 'audio' in fmt.get('type', ''):
-        audio_url = fmt.get('url')
-        break
-
-    if audio_url:
-      return jsonify({'audio_url': audio_url})
-    else:
-      return jsonify({'error': 'Audio stream not found'}), 404
-  except Exception as e:
-    print(f'Ошибка получения потока: {e}')
-    return jsonify({'error': str(e)}), 500
+  return jsonify({'audio_url': audio_url})
 
 
 if __name__ == '__main__':

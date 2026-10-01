@@ -46,8 +46,7 @@ def api_search():
   tracks = []
   try:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      # Використовуємо прямий пошуковий запит YouTube
-      info = ydl.extract_info(f'ytsearch10:{query}', download=False)
+      info = ydl.extract_info(f'ytsearch15:{query}', download=False)
       entries = info.get('entries', [])
 
       for entry in entries:
@@ -75,12 +74,13 @@ def api_play():
   if not video_url:
     return jsonify({'error': 'No URL provided'}), 400
 
+  # Використовуємо надійні параметри для обходу захисту YouTube на хмарі
   ydl_opts = {
-      'format': 'bestaudio/best',
+      'format': 'bestaudio',
       'noplaylist': True,
       'quiet': True,
       'no_warnings': True,
-      'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+      'extractor_args': {'youtube': {'player_client': ['android']}},
   }
 
   try:
@@ -91,7 +91,7 @@ def api_play():
       if not audio_url:
         formats = info.get('formats', [])
         for f in formats:
-          if f.get('acodec') != 'none' and f.get('url'):
+          if f.get('url'):
             audio_url = f.get('url')
             break
 

@@ -19,7 +19,6 @@ def api_search():
     return jsonify([])
 
   try:
-    # Використовуємо стабільний відкритий пошук по повноцінних музичних треках
     url = f"https://itunes.apple.com/search?term={requests.utils.quote(query)}&media=music&entity=song&limit=15"
     res = requests.get(url, timeout=5)
     
@@ -34,12 +33,11 @@ def api_search():
       preview_url = item.get('previewUrl')
 
       if title and preview_url:
-        # Розширюємо якість та перетворюємо посилання на повноцінний файл
-        full_audio = preview_url.replace('m4a', 'mp3').replace('100by100', '600by600')
+        # Віддаємо оригінальне посилання без штучних замін
         tracks.append({
             'title': title,
             'author': artist,
-            'url': full_audio,
+            'url': preview_url,
         })
     return jsonify(tracks)
   except Exception as e:

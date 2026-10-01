@@ -19,31 +19,79 @@ def api_search():
     return jsonify([])
 
   try:
-    # Використовуємо відкритий публічний API Deezer
-    url = f"https://api.deezer.com/search?q={requests.utils.quote(query)}&limit=15"
-    res = requests.get(url, timeout=5)
-    
-    if res.status_code != 200:
-      return jsonify([])
+    # Імітуємо звичайний браузер, щоб сайт не блокував запити з Render
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://z3.fm/',
+    }
 
-    data = res.json().get('data', [])
+    # Робимо запит до пошуку z3.fm
+    search_url = f'https://z3.fm/mp3/search?keywords={requests.utils.quote(query)}'
+    res = requests.get(search_url, headers=headers, timeout=6)
+
     tracks = []
-    
-    for item in data:
-      title = item.get('title')
-      artist = item.get('artist', {}).get('name', 'Виконавець')
-      preview_url = item.get('preview') # Пряме посилання на потокове аудіо
+    if res.status_code == 200:
+      from html.parser import HTMLParser
 
-      if title and preview_url:
-        tracks.append({
-            'title': title,
-            'author': artist,
-            'url': preview_url,
-        })
-        
+      class Z3Parser(HTMLParser):
+        def __init__(self):
+          super().__init__()
+          self.in_song = False
+          self.current_title = ""
+          self.current_artist = ""
+          self.current_url = ""
+          self.tracks = []
+          self.capture = None
+
+        def handle_starttag(self, tag, attrs):
+          attrs_dict = dict(attrs)
+          # Шукаємо блоки пісень на сторінці z3.fm
+          if tag == 'div' and 'song' in attrs_dict.get('class', ''):
+            self.in_song = True
+            self.current_title = ""
+            self.current_artist = ""
+            self.current_url = ""
+          
+          if self.in_song:
+            if tag == 'a' and 'download' in attrs_dict.get('class', ''):
+              self.current_url = attrs_dict.get('href', '')
+            elif tag == 'span':
+              cls = attrs_dict.get('class', '')
+              if 'name' in cls or 'song-name' in cls:
+                self.capture = 'title'
+              elif 'artist' in cls or 'author' in cls:
+                self.capture = 'artist'
+
+        def handle_data(self, data):
+          if self.in_song:
+            if self.capture == 'title':
+              self.current_title += data.strip()
+            elif self.capture == 'artist':
+              self.current_artist += data.strip()
+
+        def handle_endtag(self, tag):
+          if tag == 'span':
+            self.capture = None
+          if tag == 'div' and self.in_song:
+            if self.current_title and self.current_url:
+              if not self.current_url.startswith('http'):
+                self.current_url = f'https://z3.fm{self.current_url}'
+              self.tracks.append({
+                  'title': self.current_title,
+                  'author': self.current_artist || 'Виконавець',
+                  'url': self.current_url,
+              })
+            self.in_song = False
+
+      parser = Z3Parser()
+      parser.feed(res.text)
+      tracks = parser.tracks[:15]
+
     return jsonify(tracks)
   except Exception as e:
-    print(f'Помилка пошуку Deezer: {e}')
+    print(f'Помилка пошуку z3: {e}')
     return jsonify([])
 
 

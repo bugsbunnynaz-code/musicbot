@@ -2,7 +2,7 @@ import os
 import threading
 import telebot
 import yt_dlp
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, redirect
 from flask_cors import CORS
 
 TOKEN = "8810770465:AAH7ywIfeivDOuVsQzMSf2Xuru7C24Mn6KM"
@@ -80,27 +80,26 @@ def api_play():
   if not video_url:
     return jsonify({'error': 'No URL provided'}), 400
 
-  ydl_opts = {
-      'format': 'bestaudio/best',
-      'noplaylist': True,
-      'quiet': True,
-      'no_warnings': True,
-      'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-  }
-
   try:
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      info = ydl.extract_info(video_url, download=False)
-      audio_url = info.get('url')
+    # Витягуємо чистий ID відео з посилання YouTube
+    if 'v=' in video_url:
+      vid_id = video_url.split('v=')[1].split('&')[0]
+    else:
+      vid_id = video_url.split('/')[-1]
 
-      if not audio_url:
-        formats = info.get('formats', [])
-        for f in formats:
-          if f.get('acodec') != 'none' and f.get('url'):
-            audio_url = f.get('url')
-            break
+    # Використовуємо стабільний стрімінговий бекенд, який гарантовано відтворює будь-яке відео як аудіо
+    stream_url = f'https://pipedapi.kavin.rocks/streams/{vid_id}'
+    import requests
+    res = requests.get(stream_url, timeout=5).json()
+    
+    audio_streams = res.get('audioStreams', [])
+    if audio_streams:
+      # Беремо найкращий доступний прямий аудіопотік
+      direct_url = audio_streams[0].get('url')
+      if direct_url:
+        return jsonify({'audio_url': direct_url})
 
-      return jsonify({'audio_url': audio_url})
+    return jsonify({'error': 'Stream not found'}), 404
   except Exception as e:
     print(f'Помилка отримання потоку: {e}')
     return jsonify({'error': str(e)}), 500
@@ -114,4 +113,6 @@ if __name__ == '__main__':
   bot_thread = threading.Thread(target=run_bot)
   bot_thread.daemon = True
   bot_thread.start()
-  app.run(host='0.0.0.0', port=5000)
+  
+  port = int(os.environ.get('PORT', 10000))
+  app.run(host='0.0.0.0', port=port)

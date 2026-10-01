@@ -19,39 +19,78 @@ def api_search():
     return jsonify([])
 
   try:
-    # Використовуємо відкрите API Jamendo для повних треків (без 30-секундних обмежень)
-    url = f"https://api.jamendo.com/v3.0/tracks/?client_id=59395f9d&format=json&limit=15&search={requests.utils.quote(query)}"
-    res = requests.get(url, timeout=5)
-    
+    # Використовуємо стабільний відкритий екземпляр Invidious для миттєвого пошуку будь-яких виконавців
+    res = requests.get(
+        f'https://invidious.perennialte.ch/api/v1/search?q={requests.utils.quote(query)}&type=video',
+        timeout=5,
+    )
+    if res.status_code != 200:
+      res = requests.get(
+          f'https://vid.puffyan.us/api/v1/search?q={requests.utils.quote(query)}&type=video',
+          timeout=5,
+      )
+
     if res.status_code != 200:
       return jsonify([])
 
-    data = res.json().get('results', [])
+    items = res.json()
     tracks = []
-    for item in data:
-      title = item.get('name')
-      artist = item.get('artist_name', 'Невідомий виконавець')
-      audio_url = item.get('audio')  # Повний трек
-
-      if title and audio_url:
+    for item in items[:15]:
+      vid_id = item.get('videoId')
+      title = item.get('title')
+      author = item.get('author')
+      if vid_id and title:
         tracks.append({
             'title': title,
-            'author': artist,
-            'url': audio_url,
+            'author': author or 'Виконавець',
+            'url': f'https://www.youtube.com/watch?v={vid_id}',
         })
     return jsonify(tracks)
   except Exception as e:
-    print(f'Помилка пошуку Jamendo: {e}')
+    print(f'Помилка пошуку: {e}')
     return jsonify([])
 
 
 @app.route('/play', methods=['GET'])
 def api_play():
-  audio_url = request.args.get('url', '')
-  if not audio_url:
+  video_url = request.args.get('url', '')
+  if not video_url:
     return jsonify({'error': 'No URL provided'}), 400
 
-  return jsonify({'audio_url': audio_url})
+  try:
+    if 'v=' in video_url:
+      vid_id = video_url.split('v=')[1].split('&')[0]
+    else:
+      vid_id = video_url.split('/')[-1]
+
+    # Отримуємо пряме посилання на повний аудіопотік через відкритий шлюз Piped API
+    res = requests.get(
+        f'https://pipedapi.kavin.rocks/streams/{vid_id}', timeout=5
+    )
+    if res.status_code == 200:
+      data = res.json()
+      audio_streams = data.get('audioStreams', [])
+      if audio_streams:
+        # Вибираємо найкращу якість звуку
+        audio_url = audio_streams[0].get('url')
+        if audio_url:
+          return jsonify({'audio_url': audio_url})
+
+    # Запасний варіант через Invidious потоки
+    res = requests.get(
+        f'https://invidious.perennialte.ch/api/v1/videos/{vid_id}', timeout=5
+    )
+    if res.status_code == 200:
+      data = res.json()
+      adaptive_formats = data.get('adaptiveFormats', [])
+      for fmt in adaptive_formats:
+        if 'audio' in fmt.get('type', ''):
+          return jsonify({'audio_url': fmt.get('url')})
+
+    return jsonify({'error': 'Audio stream not found'}), 404
+  except Exception as e:
+    print(f'Помилка отримання потоку: {e}')
+    return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

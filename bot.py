@@ -8,7 +8,6 @@ from flask_cors import CORS
 TOKEN = "8810770465:AAH7ywIfeivDOuVsQzMSf2Xuru7C24Mn6KM"
 WEB_APP_URL = "https://music-box-player.vercel.app/"
 
-# ПЕРШЕ: створюємо ініціалізацію app, і лише потім використовуємо її нижче
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 CORS(app)
@@ -39,35 +38,29 @@ def api_search():
   ydl_opts = {
       'format': 'bestaudio/best',
       'noplaylist': True,
-      'default_search': 'ytsearch10',
       'extract_flat': True,
       'skip_download': True,
+      'quiet': True,
   }
 
   tracks = []
   try:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      info = ydl.extract_info(query, download=False)
+      # Використовуємо прямий пошуковий запит YouTube
+      info = ydl.extract_info(f'ytsearch10:{query}', download=False)
       entries = info.get('entries', [])
-      if not entries and 'title' in info:
-        entries = [info]
 
       for entry in entries:
         if entry:
-          vid_id = entry.get('id') or entry.get('url')
+          vid_id = entry.get('id')
           title = entry.get('title', 'Без назви')
           author = entry.get('uploader') or entry.get('channel') or 'YouTube'
 
           if vid_id:
-            if not str(vid_id).startswith('http'):
-              watch_url = f'https://www.youtube.com/watch?v={vid_id}'
-            else:
-              watch_url = vid_id
-
             tracks.append({
                 'title': title,
                 'author': author,
-                'url': watch_url,
+                'url': f'https://www.youtube.com/watch?v={vid_id}',
             })
   except Exception as e:
     print(f'Помилка пошуку: {e}')
@@ -87,12 +80,14 @@ def api_play():
       'noplaylist': True,
       'quiet': True,
       'no_warnings': True,
+      'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
   }
 
   try:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
       info = ydl.extract_info(video_url, download=False)
       audio_url = info.get('url')
+
       if not audio_url:
         formats = info.get('formats', [])
         for f in formats:

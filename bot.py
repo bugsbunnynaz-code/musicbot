@@ -19,36 +19,34 @@ def api_search():
     return jsonify([])
 
   try:
-    # Використовуємо офіційне відкрите API Deezer для пошуку музики
-    res = requests.get(
-        f'https://api.deezer.com/search?q={requests.utils.quote(query)}',
-        timeout=5,
-    )
+    # Використовуємо відкрите API Jamendo для повних треків (без 30-секундних обмежень)
+    url = f"https://api.jamendo.com/v3.0/tracks/?client_id=59395f9d&format=json&limit=15&search={requests.utils.quote(query)}"
+    res = requests.get(url, timeout=5)
+    
     if res.status_code != 200:
       return jsonify([])
 
-    data = res.json().get('data', [])
+    data = res.json().get('results', [])
     tracks = []
-    for item in data[:15]:
-      title = item.get('title')
-      artist = item.get('artist', {}).get('name', 'Невідомий виконавець')
-      preview_url = item.get('preview')  # Пряме посилання на трек
+    for item in data:
+      title = item.get('name')
+      artist = item.get('artist_name', 'Невідомий виконавець')
+      audio_url = item.get('audio')  # Повний трек
 
-      if title and preview_url:
+      if title and audio_url:
         tracks.append({
             'title': title,
             'author': artist,
-            'url': preview_url,
+            'url': audio_url,
         })
     return jsonify(tracks)
   except Exception as e:
-    print(f'Помилка пошуку Deezer: {e}')
+    print(f'Помилка пошуку Jamendo: {e}')
     return jsonify([])
 
 
 @app.route('/play', methods=['GET'])
 def api_play():
-  # Оскільки Deezer одразу віддає готове посилання на аудіо при пошуку, просто повертаємо його
   audio_url = request.args.get('url', '')
   if not audio_url:
     return jsonify({'error': 'No URL provided'}), 400

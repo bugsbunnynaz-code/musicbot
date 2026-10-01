@@ -1,6 +1,6 @@
 import os
-import requests
 import telebot
+import yt_dlp
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -18,37 +18,43 @@ def api_search():
   if not query:
     return jsonify([])
 
+  ydl_opts = {
+      'format': 'bestaudio/best',
+      'noplaylist': True,
+      'extract_flat': True,
+      'skip_download': True,
+      'quiet': True,
+      'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+  }
+
+  tracks = []
   try:
-    # Використовуємо стабільний відкритий екземпляр Invidious для миттєвого пошуку будь-яких виконавців
-    res = requests.get(
-        f'https://invidious.perennialte.ch/api/v1/search?q={requests.utils.quote(query)}&type=video',
-        timeout=5,
-    )
-    if res.status_code != 200:
-      res = requests.get(
-          f'https://vid.puffyan.us/api/v1/search?q={requests.utils.quote(query)}&type=video',
-          timeout=5,
-      )
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+      info = ydl.extract_info(f'ytsearch15:{query}', download=False)
+      entries = info.get('entries', [])
 
-    if res.status_code != 200:
-      return jsonify([])
+      for entry in entries:
+        if entry:
+          vid_id = entry.get('id')
+          title = entry.get('title', 'Без назви')
+          author = (
+              entry.get('uploader')
+              or entry.get('channel')
+              or entry.get('artist')
+              or 'YouTube'
+          )
 
-    items = res.json()
-    tracks = []
-    for item in items[:15]:
-      vid_id = item.get('videoId')
-      title = item.get('title')
-      author = item.get('author')
-      if vid_id and title:
-        tracks.append({
-            'title': title,
-            'author': author or 'Виконавець',
-            'url': f'https://www.youtube.com/watch?v={vid_id}',
-        })
-    return jsonify(tracks)
+          if vid_id:
+            tracks.append({
+                'title': title,
+                'author': author,
+                'url': f'https://www.youtube.com/watch?v={vid_id}',
+            })
   except Exception as e:
-    print(f'Помилка пошуку: {e}')
+    print(f'Помилка пошуку yt-dlp: {e}')
     return jsonify([])
+
+  return jsonify(tracks)
 
 
 @app.route('/play', methods=['GET'])
@@ -57,37 +63,30 @@ def api_play():
   if not video_url:
     return jsonify({'error': 'No URL provided'}), 400
 
+  ydl_opts = {
+      'format': 'bestaudio/best',
+      'noplaylist': True,
+      'quiet': True,
+      'no_warnings': True,
+      'extractor_args': {'youtube': {'player_client': ['android']}},
+  }
+
   try:
-    if 'v=' in video_url:
-      vid_id = video_url.split('v=')[1].split('&')[0]
-    else:
-      vid_id = video_url.split('/')[-1]
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+      info = ydl.extract_info(video_url, download=False)
+      audio_url = info.get('url')
 
-    # Отримуємо пряме посилання на повний аудіопотік через відкритий шлюз Piped API
-    res = requests.get(
-        f'https://pipedapi.kavin.rocks/streams/{vid_id}', timeout=5
-    )
-    if res.status_code == 200:
-      data = res.json()
-      audio_streams = data.get('audioStreams', [])
-      if audio_streams:
-        # Вибираємо найкращу якість звуку
-        audio_url = audio_streams[0].get('url')
-        if audio_url:
-          return jsonify({'audio_url': audio_url})
+      if not audio_url:
+        formats = info.get('formats', [])
+        for f in formats:
+          if f.get('url') and f.get('acodec') != 'none':
+            audio_url = f.get('url')
+            break
 
-    # Запасний варіант через Invidious потоки
-    res = requests.get(
-        f'https://invidious.perennialte.ch/api/v1/videos/{vid_id}', timeout=5
-    )
-    if res.status_code == 200:
-      data = res.json()
-      adaptive_formats = data.get('adaptiveFormats', [])
-      for fmt in adaptive_formats:
-        if 'audio' in fmt.get('type', ''):
-          return jsonify({'audio_url': fmt.get('url')})
-
-    return jsonify({'error': 'Audio stream not found'}), 404
+      if audio_url:
+        return jsonify({'audio_url': audio_url})
+      else:
+        return jsonify({'error': 'Audio stream not found'}), 404
   except Exception as e:
     print(f'Помилка отримання потоку: {e}')
     return jsonify({'error': str(e)}), 500

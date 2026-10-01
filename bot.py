@@ -1,5 +1,4 @@
 import os
-import threading
 import requests
 import telebot
 from flask import Flask, jsonify, request
@@ -13,22 +12,6 @@ app = Flask(__name__)
 CORS(app)
 
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-  markup = telebot.types.InlineKeyboardMarkup()
-  web_app = telebot.types.WebAppInfo(url=WEB_APP_URL)
-  markup.add(
-      telebot.types.InlineKeyboardButton(text="🎧 Відкрити плеєр", web_app=web_app)
-  )
-
-  bot.send_message(
-      message.chat.id,
-      "Привіт! 🎵 Це твій повноцінний музичний бот.\n\n"
-      "Натисни кнопку нижче, щоб відкрити плеєр і слухати повні треки!",
-      reply_markup=markup,
-  )
-
-
 @app.route('/search', methods=['GET'])
 def api_search():
   query = request.args.get('q', '')
@@ -36,7 +19,6 @@ def api_search():
     return jsonify([])
 
   try:
-    # Використовуємо публічний екземпляр Invidious API для миттєвого пошуку
     res = requests.get(
         f'https://vid.puffyan.us/api/v1/search?q={requests.utils.quote(query)}&type=video',
         timeout=5,
@@ -58,7 +40,7 @@ def api_search():
         })
     return jsonify(tracks)
   except Exception as e:
-    print(f'Помилка пошуку: {e}')
+    print(f'Ошибка поиска: {e}')
     return jsonify([])
 
 
@@ -74,12 +56,10 @@ def api_play():
     else:
       vid_id = video_url.split('/')[-1]
 
-    # Запитуємо прямий аудіопотік через надійний публічний інстанс
     res = requests.get(
         f'https://invidious.perennialte.ch/api/v1/videos/{vid_id}', timeout=5
     )
     if res.status_code != 200:
-      # Запасний варіант інстансу
       res = requests.get(
           f'https://vid.puffyan.us/api/v1/videos/{vid_id}', timeout=5
       )
@@ -98,16 +78,10 @@ def api_play():
     else:
       return jsonify({'error': 'Audio stream not found'}), 404
   except Exception as e:
-    print(f'Помилка отримання потоку: {e}')
+    print(f'Ошибка получения потока: {e}')
     return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
-  bot_thread = threading.Thread(
-      target=lambda: bot.infinity_polling(none_stop=True)
-  )
-  bot_thread.daemon = True
-  bot_thread.start()
-
   port = int(os.environ.get('PORT', 10000))
   app.run(host='0.0.0.0', port=port)

@@ -1,6 +1,5 @@
 import os
 import threading
-import requests
 import telebot
 import yt_dlp
 from flask import Flask, jsonify, request
@@ -36,33 +35,43 @@ def api_search():
   if not query:
     return jsonify([])
 
+  ydl_opts = {
+      'format': 'bestaudio/best',
+      'noplaylist': True,
+      'extract_flat': True,
+      'skip_download': True,
+      'quiet': True,
+      'extractor_args': {'youtube': {'player_client': ['android']}},
+  }
+
+  tracks = []
   try:
-    # Використовуємо публічний та надійний Invidious/Cobalt/YouTube API для миттєвого пошуку без блокувань
-    search_url = f"https://vid.puffyan.us/api/v1/search?q={requests.utils.quote(query)}&type=video"
-    response = requests.get(search_url, timeout=5)
-    
-    if response.status_code != 200:
-      return jsonify([])
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+      info = ydl.extract_info(f'ytsearch10:{query}', download=False)
+      entries = info.get('entries', [])
 
-    results = response.json()
-    tracks = []
+      for entry in entries:
+        if entry:
+          vid_id = entry.get('id')
+          title = entry.get('title', 'Без назви')
+          author = (
+              entry.get('uploader')
+              or entry.get('channel')
+              or entry.get('artist')
+              or 'YouTube'
+          )
 
-    for item in results[:15]:
-      vid_id = item.get('videoId')
-      title = item.get('title')
-      author = item.get('author')
-
-      if vid_id and title:
-        tracks.append({
-            'title': title,
-            'author': author or 'YouTube',
-            'url': f'https://www.youtube.com/watch?v={vid_id}',
-        })
-
-    return jsonify(tracks)
+          if vid_id:
+            tracks.append({
+                'title': title,
+                'author': author,
+                'url': f'https://www.youtube.com/watch?v={vid_id}',
+            })
   except Exception as e:
     print(f'Помилка пошуку: {e}')
     return jsonify([])
+
+  return jsonify(tracks)
 
 
 @app.route('/play', methods=['GET'])
@@ -76,7 +85,7 @@ def api_play():
       'noplaylist': True,
       'quiet': True,
       'no_warnings': True,
-      'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+      'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
   }
 
   try:

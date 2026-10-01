@@ -1,5 +1,6 @@
 import os
 import threading
+import requests
 import telebot
 import yt_dlp
 from flask import Flask, jsonify, request
@@ -35,37 +36,33 @@ def api_search():
   if not query:
     return jsonify([])
 
-  ydl_opts = {
-      'format': 'bestaudio/best',
-      'noplaylist': True,
-      'extract_flat': True,
-      'skip_download': True,
-      'quiet': True,
-  }
-
-  tracks = []
   try:
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-      info = ydl.extract_info(f'ytsearch15:{query}', download=False)
-      entries = info.get('entries', [])
+    # Використовуємо публічний та надійний Invidious/Cobalt/YouTube API для миттєвого пошуку без блокувань
+    search_url = f"https://vid.puffyan.us/api/v1/search?q={requests.utils.quote(query)}&type=video"
+    response = requests.get(search_url, timeout=5)
+    
+    if response.status_code != 200:
+      return jsonify([])
 
-      for entry in entries:
-        if entry:
-          vid_id = entry.get('id')
-          title = entry.get('title', 'Без назви')
-          author = entry.get('uploader') or entry.get('channel') or 'YouTube'
+    results = response.json()
+    tracks = []
 
-          if vid_id:
-            tracks.append({
-                'title': title,
-                'author': author,
-                'url': f'https://www.youtube.com/watch?v={vid_id}',
-            })
+    for item in results[:15]:
+      vid_id = item.get('videoId')
+      title = item.get('title')
+      author = item.get('author')
+
+      if vid_id and title:
+        tracks.append({
+            'title': title,
+            'author': author or 'YouTube',
+            'url': f'https://www.youtube.com/watch?v={vid_id}',
+        })
+
+    return jsonify(tracks)
   except Exception as e:
     print(f'Помилка пошуку: {e}')
     return jsonify([])
-
-  return jsonify(tracks)
 
 
 @app.route('/play', methods=['GET'])
@@ -74,13 +71,12 @@ def api_play():
   if not video_url:
     return jsonify({'error': 'No URL provided'}), 400
 
-  # Використовуємо надійні параметри для обходу захисту YouTube на хмарі
   ydl_opts = {
-      'format': 'bestaudio',
+      'format': 'bestaudio/best',
       'noplaylist': True,
       'quiet': True,
       'no_warnings': True,
-      'extractor_args': {'youtube': {'player_client': ['android']}},
+      'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
   }
 
   try:
@@ -91,7 +87,7 @@ def api_play():
       if not audio_url:
         formats = info.get('formats', [])
         for f in formats:
-          if f.get('url'):
+          if f.get('acodec') != 'none' and f.get('url'):
             audio_url = f.get('url')
             break
 
